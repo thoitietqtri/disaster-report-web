@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BÁO CÁO THIÊN TAI — NHẬP THIỆT HẠI TỪ FILE BÁO CÁO MẪU.XLSX</title>
+  <style>
+    :root{--bg:#f6f8ff;--txt:#0f172a;--muted:#64748b;--pri:#1d4ed8;--grid:#e2e8f0}
+    body{margin:0;font:16px/1.5 system-ui,Segoe UI,Roboto,Arial;background:var(--bg);color:var(--txt)}
+    .wrap{max-width:1000px;margin:20px auto;padding:20px}
+    h1{margin:0 0 10px 0;font-size:22px}
+    .card{background:#fff;border:1px solid var(--grid);border-radius:14px;padding:16px;box-shadow:0 4px 14px rgba(0,0,0,.06);margin-bottom:14px}
+    label{font-size:14px;color:#555;display:block;margin:6px 0}
+    input[type=text],input[type=password],input[type=file]{padding:8px;width:100%;border:1px solid #cbd5e1;border-radius:8px;box-sizing:border-box}
+    button{padding:10px 14px;border:none;border-radius:10px;cursor:pointer;font-weight:600}
+    .btn{background:var(--pri);color:#fff}
+    .btn.secondary{background:#fff;color:var(--pri);border:1px solid var(--pri)}
+    .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    .hint{font-size:12px;color:#64748b}
+    .badge{display:inline-block;padding:2px 8px;border:1px solid var(--grid);border-radius:999px;font-size:12px;background:#f8fafc}
+    #sheetContainer table{width:100%;border-collapse:separate;border-spacing:0}
+    #sheetContainer td{border:1px solid #e5e7eb;padding:6px;vertical-align:top}
+    .toast{position:fixed;right:20px;bottom:20px;background:#fff;border:1px solid #e5e7eb;padding:8px 12px;border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,.16)}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>BÁO CÁO THIÊN TAI — SỐ LIỆU LẤY TỪ FILE <i>BAOCAOTHIETHAI.XLSX </i> TRÊN MÁY TÍNH</i></h1>
+     
+    </div>
+
+    <!-- Đăng nhập -->
+    <div class="card" id="loginCard">
+      <h3>Đăng nhập</h3>
+      <label>Email:</label>
+      <input type="text" id="loginEmail" placeholder="qtri001@qtri.vn" />
+      <label>Mật khẩu:</label>
+      <input type="password" id="loginPassword" placeholder="Qtri@001" />
+      <div class="toolbar" style="margin-top:8px">
+        <button id="btnLogin" class="btn">Đăng nhập</button>
+      </div>
+      <div class="hint">Dùng tài khoản dạng <b>qtriXXX@qtri.vn</b> / mật khẩu <b>Qtri@XXX</b></div>
+    </div>
+
+    <!-- Thông tin user -->
+    <div class="card" id="whoCard" style="display:none">
+      <div class="toolbar" style="justify-content:space-between">
+        <div class="hint">Đang đăng nhập: <b id="whoEmail"></b> <span id="whoCommune" class="badge" style="margin-left:8px"></span></div>
+        <div class="toolbar">
+          <button id="btnLogout" class="btn secondary">Đăng xuất</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Chọn file Excel -->
+    <div class="card" id="mainCard" style="display:none">
+      <label>1) Chọn file Excel (*.xlsx):</label>
+      <input type="file" id="xlsxFile" accept=".xlsx" />
+      <div class="toolbar" style="margin-top:8px">
+        <span class="badge">Sheet</span>
+        <input type="text" id="sheetName" value="Maubaocao" style="max-width:220px"/>
+        <button id="btnRender" class="btn">Dựng bảng</button>
+      </div>
+    </div>
+
+    <div id="sheetContainer" class="card" style="display:none"></div>
+
+    <!-- Hành động -->
+    <div class="card" id="actionCard" style="display:none;display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between">
+      <div class="hint">Dữ liệu gửi vào bảng <code>reports</code> trên Supabase.</div>
+      <div class="toolbar">
+        <button id="btnSave" class="btn">Gửi báo cáo</button>
+        <button id="btnDraft" class="btn secondary">Lưu nháp</button>
+        <button id="btnRestore" class="btn secondary">Khôi phục nháp</button>
+        <button id="btnLoadLatest" class="btn secondary">Nạp từ báo cáo gần nhất</button>
+        <button id="btnExportJson" class="btn secondary">Xuất JSON</button>
+        <input type="file" id="jsonFile" accept=".json" style="display:none"/>
+        <button id="btnImportJson" class="btn secondary">Nhập JSON</button>
+        <button id="btnExportXlsx" class="btn secondary">Xuất Excel (.xlsx)</button>
+        <button id="btnPreview" class="btn secondary">Xem lại</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Supabase SDK -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- SheetJS ưu tiên file local, fallback CDN -->
+  <script src="./xlsx.full.min.js"></script>
+  <script>
+    if (!window.XLSX) {
+      const s=document.createElement('script');
+      s.src='https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js';
+      document.head.appendChild(s);
+    }
+  </script>
+
+  <script>
+    // ===== Helpers =====
+    function toast(msg){
+      let el=document.querySelector('.toast');
+      if(!el){ el=document.createElement('div'); el.className='toast'; document.body.appendChild(el); }
+      el.textContent=msg; clearTimeout(window.__tt); window.__tt=setTimeout(()=>{ el.remove(); },2600);
+    }
+
+    // ===== Supabase cấu hình cứng =====
+    const SUPABASE_URL = "https://iwrktrjjpbbogazpohrq.supabase.co";
+    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml3cmt0cmpqcGJib2dhenBvaHJxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTczODIwMzgsImV4cCI6MjA3Mjk1ODAzOH0.Hd12I5UeS6lrE9FSz4bkrM6HaWs-03-vtth5U6dLmB4";
+    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+    let currentUser=null, workbook=null, currentSheet=null;
+    let myCommune = { code: null, name: null }; // lấy từ RPC
+
+    // ===== Đăng nhập / Đăng xuất =====
+    document.getElementById('btnLogin').addEventListener('click', async ()=>{
+      const email=document.getElementById('loginEmail').value.trim();
+      const password=document.getElementById('loginPassword').value.trim();
+
+      const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+      if(error){ alert(`Đăng nhập lỗi: ${error.message}`); return; }
+
+      currentUser=data.user;
+      document.getElementById('whoEmail').textContent=email;
+
+      const { data: communeData, error: rpcError } = await supabaseClient.rpc('get_my_commune');
+      if (!rpcError && communeData && communeData.length) {
+        myCommune = { code: communeData[0].code, name: communeData[0].name };
+        document.getElementById('whoCommune').textContent = `Đơn vị: ${myCommune.name} (${myCommune.code})`;
+      }
+
+      document.getElementById('loginCard').style.display='none';
+      document.getElementById('whoCard').style.display='block';
+      document.getElementById('mainCard').style.display='block';
+      document.getElementById('sheetContainer').style.display='block';
+      document.getElementById('actionCard').style.display='flex';
+      toast('Đăng nhập thành công');
+    });
+
+    document.getElementById('btnLogout').addEventListener('click', async ()=>{
+      await supabaseClient.auth.signOut(); currentUser=null; myCommune={code:null,name:null};
+      document.getElementById('whoCard').style.display='none';
+      document.getElementById('mainCard').style.display='none';
+      document.getElementById('sheetContainer').style.display='none';
+      document.getElementById('actionCard').style.display='none';
+      document.getElementById('loginCard').style.display='block';
+      toast('Đã đăng xuất');
+    });
+
+    // ===== Excel load / render (giữ merge) =====
+    document.getElementById('xlsxFile').addEventListener('change', async (ev)=>{
+      if(!window.XLSX) return alert('Thiếu thư viện XLSX');
+      const f=ev.target.files&&ev.target.files[0]; if(!f) return;
+      const buf=await f.arrayBuffer(); workbook=XLSX.read(buf,{type:'array'}); toast('Đã mở file.');
+    });
+
+    document.getElementById('btnRender').addEventListener('click',()=>{
+      if(!workbook) return alert('Chưa có file');
+      const name=document.getElementById('sheetName').value||workbook.SheetNames[0];
+      currentSheet=workbook.Sheets[name];
+      if(!currentSheet) return alert('Không thấy sheet: '+name);
+      renderSheet(currentSheet);
+    });
+
+    function renderSheet(sheet){
+      const host=document.getElementById('sheetContainer'); host.innerHTML=''; host.style.display='block';
+      const range=XLSX.utils.decode_range(sheet['!ref']); const merges=sheet['!merges']||[];
+      const mergeMap=new Map(), covered=new Set();
+      merges.forEach(m=>{
+        mergeMap.set(m.s.r+','+m.s.c,{rs:m.e.r-m.s.r+1,cs:m.e.c-m.s.c+1});
+        for(let r=m.s.r;r<=m.e.r;r++) for(let c=m.s.c;c<=m.e.c;c++) if(r!=m.s.r||c!=m.s.c) covered.add(r+','+c);
+      });
+      const table=document.createElement('table');
+      for(let R=range.s.r;R<=range.e.r;++R){
+        const tr=document.createElement('tr');
+        for(let C=range.s.c;C<=range.e.c;++C){
+          if(covered.has(R+','+C)) continue;
+          const addr=XLSX.utils.encode_cell({r:R,c:C});
+          const cell=sheet[addr]; const val=cell?String(cell.v??''):''; const td=document.createElement('td');
+          const m=mergeMap.get(R+','+C);
+          if(m){ if(m.rs>1) td.rowSpan=m.rs; if(m.cs>1) td.colSpan=m.cs; }
+          if(val===''){
+            const inp=document.createElement('input');
+            inp.placeholder='…'; inp.style.width='100%';
+            inp.dataset.addr=addr; // để giữ mapping cell -> value (fallback)
+            td.appendChild(inp);
+          } else {
+            td.textContent=val;
+          }
+          tr.appendChild(td);
+        }
+        table.appendChild(tr);
+      }
+      host.appendChild(table);
+    }
+
+    // ===== getPayload (ghi CẢ 2 ĐỊNH DẠNG: aoa + cells) =====
+    function getPayload(){
+      const aoa=[];
+      const cells={}; // kiểu cũ { 'A1': '...', 'B7': '...' }
+      document.querySelectorAll('#sheetContainer table tr').forEach(tr=>{
+        const row=[];
+        tr.querySelectorAll('td').forEach(td=>{
+          const inp=td.querySelector('input');
+          const v = inp ? inp.value : td.textContent;
+          row.push(v);
+          if (inp && inp.dataset.addr) cells[inp.dataset.addr] = v;
+        });
+        aoa.push(row);
+      });
+      return { aoa, cells };
+    }
+
+    // ===== Lưu nháp =====
+    document.getElementById('btnDraft').addEventListener('click',()=>{
+      localStorage.setItem('maubaocao_draft',JSON.stringify(getPayload()));
+      toast('Đã lưu nháp.');
+    });
+
+    // ===== Khôi phục nháp (fallback: aoa -> cells -> legacy object) =====
+    document.getElementById('btnRestore').addEventListener('click', ()=>{
+      const raw = localStorage.getItem('maubaocao_draft');
+      if(!raw){ alert('Chưa có bản nháp để khôi phục.'); return; }
+      let p; try{ p=JSON.parse(raw); }catch(e){ alert('Bản nháp bị hỏng/không hợp lệ.'); return; }
+      if(!document.querySelector('#sheetContainer table')){ alert('Hãy bấm "Dựng bảng" trước khi khôi phục.'); return; }
+      applyPayloadToForm(p);
+      toast('Đã khôi phục nháp.');
+    });
+
+    // ===== Nạp từ báo cáo gần nhất (đổ vào input hiện tại) =====
+    document.getElementById('btnLoadLatest').addEventListener('click', async ()=>{
+      if(!currentUser) return alert('Chưa đăng nhập');
+      if(!document.querySelector('#sheetContainer table')){ alert('Hãy bấm "Dựng bảng" trước khi nạp dữ liệu.'); return; }
+      try{
+        const { data, error } = await supabaseClient
+          .from('reports')
+          .select('payload')
+          .eq('user_id', currentUser.id)
+          .order('created_at', { ascending: false })
+          .limit(1);
+        if(error) throw error;
+        if(!data || !data.length) { alert('Chưa có báo cáo nào'); return; }
+        const p = data[0].payload || {};
+        applyPayloadToForm(p);
+        toast('Đã nạp dữ liệu từ báo cáo gần nhất.');
+      }catch(e){ alert('Lỗi nạp dữ liệu: '+(e.message||e)); }
+    });
+
+    // ===== Xuất JSON =====
+    document.getElementById('btnExportJson').addEventListener('click', ()=>{
+      const dataStr = JSON.stringify(getPayload(),null,2);
+      const blob = new Blob([dataStr], {type:'application/json'});
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(blob);
+      a.download='baocao.json';
+      a.click();
+      toast('Đã xuất JSON.');
+    });
+
+    // ===== Nhập JSON =====
+    document.getElementById('btnImportJson').addEventListener('click', ()=>{ document.getElementById('jsonFile').click(); });
+    document.getElementById('jsonFile').addEventListener('change',(ev)=>{
+      const f=ev.target.files[0]; if(!f) return;
+      const reader=new FileReader();
+      reader.onload=()=>{ try{ const p=JSON.parse(reader.result); applyPayloadToForm(p); toast('Đã nhập JSON.'); }catch(e){alert('File JSON không hợp lệ');} };
+      reader.readAsText(f);
+    });
+
+    // ===== Xuất Excel (.xlsx) =====
+    document.getElementById('btnExportXlsx').addEventListener('click', ()=>{
+      if(!window.XLSX){ alert('Thiếu thư viện XLSX'); return; }
+      const payload = getPayload();
+      // Ưu tiên aoa; nếu rỗng thì suy từ cells (sắp xếp theo địa chỉ)
+      let aoa = Array.isArray(payload.aoa) && payload.aoa.length ? payload.aoa : null;
+      if(!aoa && payload.cells && typeof payload.cells==='object'){
+        // Thô sơ: chuyển cells -> map (row,col) rồi build aoa nhỏ gọn
+        const pos = Object.keys(payload.cells).map(addr=>{
+          const rc = XLSX.utils.decode_cell(addr);
+          return {r:rc.r,c:rc.c,v:payload.cells[addr]};
+        });
+        if(pos.length){
+          const maxR = Math.max(...pos.map(p=>p.r));
+          const maxC = Math.max(...pos.map(p=>p.c));
+          aoa = Array.from({length:maxR+1}, ()=>Array.from({length:maxC+1}, ()=>""));
+          pos.forEach(p=>{ aoa[p.r][p.c] = p.v==null?"":String(p.v); });
+        } else {
+          aoa = [["(trống)"]];
+        }
+      }
+      if(!aoa) aoa = [["(trống)"]];
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      XLSX.utils.book_append_sheet(wb, ws, 'Maubaocao');
+      // Gợi ý độ rộng cột cho dễ đọc
+      const maxCols = Math.max(...aoa.map(r=>r.length));
+      ws['!cols'] = Array.from({length:maxCols}, ()=>({wch:20}));
+      XLSX.writeFile(wb, 'baocao.xlsx');
+      toast('Đã xuất Excel.');
+    });
+
+    // ===== Hàm áp payload vào form (ưu tiên: aoa -> cells -> legacy) =====
+    function applyPayloadToForm(p){
+      const table = document.querySelector('#sheetContainer table'); if(!table){alert('Hãy dựng bảng trước');return;}
+
+      // 1) aoa: map theo vị trí hàng/cột; chỉ ghi vào ô có input
+      if (p && Array.isArray(p.aoa)) {
+        const rows = Array.from(table.querySelectorAll('tr'));
+        rows.forEach((tr, r)=>{
+          const tds = Array.from(tr.querySelectorAll('td'));
+          const arr = p.aoa[r] || [];
+          arr.forEach((val, c)=>{
+            const td = tds[c]; if(!td) return;
+            const inp = td.querySelector('input');
+            if(inp) inp.value = (val==null?'':String(val));
+          });
+        });
+        return;
+      }
+
+      // 2) cells: đặt theo địa chỉ A1, B2...
+      if (p && p.cells && typeof p.cells === 'object' && !Array.isArray(p.cells)) {
+        Object.entries(p.cells).forEach(([addr,val])=>{
+          const el = document.querySelector(`input[data-addr="${addr}"]`);
+          if(el) el.value = (val==null?'':String(val));
+        });
+        return;
+      }
+
+      // 3) legacy object thẳng {A1:'',B2:''}
+      if (p && typeof p === 'object' && !Array.isArray(p)) {
+        Object.entries(p).forEach(([addr,val])=>{
+          const el = document.querySelector(`input[data-addr="${addr}"]`);
+          if(el) el.value = (val==null?'':String(val));
+        });
+        return;
+      }
+    }
+
+    // ===== Gửi báo cáo =====
+    document.getElementById('btnSave').addEventListener('click',async ()=>{
+      if(!currentUser) return alert('Chưa đăng nhập');
+      const values=getPayload();
+      const commune_code = myCommune.code || null;
+
+      try{
+        const { error }=await supabaseClient
+          .from('reports')
+          .insert({
+            user_id: currentUser.id,
+            commune_code: commune_code,
+            title: `Báo cáo thiên tai - ${new Date().toLocaleString('vi-VN')}`,
+            payload: values
+          })
+          .select();
+        if(error) throw error;
+        toast('Đã gửi báo cáo.');
+      }catch(e){
+        alert('Lỗi gửi báo cáo: '+(e.message||e));
+      }
+    });
+
+    // ===== Xem lại báo cáo gần nhất (hiển thị ra bảng tĩnh) =====
+    document.getElementById('btnPreview').addEventListener('click', async ()=>{
+      if(!currentUser) return alert('Chưa đăng nhập');
+      try{
+        const { data, error } = await supabaseClient
+          .from('reports')
+          .select('payload')
+          .eq('user_id', currentUser.id)
+          .order('created_at', { ascending: false })
+          .limit(1);
+        if(error) throw error;
+        if(!data || !data.length) { alert('Chưa có báo cáo nào'); return; }
+
+        const p = data[0].payload || {};
+        const host=document.getElementById('sheetContainer'); 
+        host.innerHTML=''; host.style.display='block';
+        const table=document.createElement('table');
+
+        // 1) có aoa -> render bảng
+        if (p && Array.isArray(p.aoa)) {
+          p.aoa.forEach(row=>{
+            const tr=document.createElement('tr');
+            row.forEach(val=>{
+              const td=document.createElement('td');
+              td.textContent = (val==null ? '' : String(val));
+              td.style.border='1px solid #e5e7eb'; td.style.padding='6px';
+              tr.appendChild(td);
+            });
+            table.appendChild(tr);
+          });
+        } 
+        // 2) có cells
+        else if (p && p.cells && typeof p.cells === 'object' && !Array.isArray(p.cells)) {
+          const header=document.createElement('tr');
+          ['Ô','Giá trị'].forEach(h=>{
+            const th=document.createElement('td');
+            th.textContent=h; th.style.fontWeight='700';
+            th.style.border='1px solid #e5e7eb'; th.style.padding='6px';
+            header.appendChild(th);
+          });
+          table.appendChild(header);
+          Object.entries(p.cells).forEach(([k,v])=>{
+            const tr=document.createElement('tr');
+            const td1=document.createElement('td');
+            const td2=document.createElement('td');
+            td1.textContent=k; td2.textContent=(v==null?'':String(v));
+            [td1,td2].forEach(td=>{td.style.border='1px solid #e5e7eb'; td.style.padding='6px';});
+            tr.appendChild(td1); tr.appendChild(td2);
+            table.appendChild(tr);
+          });
+        } 
+        // 3) legacy {A1:'',B2:''}
+        else if (p && typeof p === 'object' && !Array.isArray(p)) {
+          const header=document.createElement('tr');
+          ['Ô','Giá trị'].forEach(h=>{
+            const th=document.createElement('td');
+            th.textContent=h; th.style.fontWeight='700';
+            th.style.border='1px solid #e5e7eb'; th.style.padding='6px';
+            header.appendChild(th);
+          });
+          table.appendChild(header);
+          Object.entries(p).forEach(([k,v])=>{
+            const tr=document.createElement('tr');
+            const td1=document.createElement('td');
+            const td2=document.createElement('td');
+            td1.textContent=k; td2.textContent=(v==null?'':String(v));
+            [td1,td2].forEach(td=>{td.style.border='1px solid #e5e7eb'; td.style.padding='6px';});
+            tr.appendChild(td1); tr.appendChild(td2);
+            table.appendChild(tr);
+          });
+        } 
+        else {
+          const tr=document.createElement('tr');
+          const td=document.createElement('td');
+          td.textContent='Payload rỗng hoặc không đúng định dạng.';
+          td.style.border='1px solid #e5e7eb'; td.style.padding='6px';
+          tr.appendChild(td); table.appendChild(tr);
+        }
+
+        host.appendChild(table);
+        toast('Đã tải báo cáo gần nhất.');
+      }catch(e){
+        alert('Lỗi xem lại: '+(e.message||e));
+      }
+    });
+  </script>
+</body>
+</html>
